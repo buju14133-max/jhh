@@ -66,3 +66,18 @@ using (auth.uid() = id);
 The frontend no longer uses localStorage for inventory or sales. Supabase is the source of truth, so an inventory change or sale is shared across Admin and Sales Rep accounts.
 
 No other interface styling/assets were changed.
+
+## Latest sales reporting adjustment
+- Sales Rep dashboard "My sales" counts and amount are calculated for the current local calendar day only.
+- Admin dashboard "Total sales today" is calculated for the current local calendar day only.
+- The daily counters reset automatically at the start of a new day without deleting historical transactions.
+- Admin navigation now includes "All Time Sales".
+- All Time Sales keeps every historical transaction, groups totals by date, and each date opens its detailed daily sales report.
+
+## Latest inventory management adjustment
+- Admin Inventory now has a **Manage inventory** action.
+- Admins can **Edit** product/category/color/size/pricing/threshold/current quantity.
+- Admins can **Adjust** stock by a positive or negative quantity with a required reason; each adjustment is logged in `inventory_adjustments`.
+- Admins can **Remove** inventory items. Existing sales history is not intentionally deleted; if a database foreign-key constraint prevents removal of an item with sales history, the item should instead be adjusted to 0 stock.
+- Sales Rep inventory and all other existing functionality are unchanged.
+- Run the updated `supabase_sales_inventory.sql` in Supabase SQL Editor to add the admin inventory-management permissions and `adjust_inventory_v2` function.

@@ -6,8 +6,8 @@
 const $ = (selector) => document.querySelector(selector);
 const app = $("#app");
 
-const SUPABASE_URL = "https://xhzvopylycblabbtwhvo.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_E-Ghl4rTkHdXA_H0GAsbbQ__K8OqGv-";
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_PUBLISHABLE_KEY = "YOUR_SUPABASE_ANON_KEY";
 
 let supabaseClient = null;
 let me = null;
@@ -19,7 +19,15 @@ const db = {
 };
 
 const money = (n) => "₦" + Number(n || 0).toLocaleString("en-NG");
-const today = () => new Date().toISOString().slice(0, 10);
+function localToday() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+const today = localToday;
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (c) => ({
@@ -234,6 +242,7 @@ async function loadData() {
     p: v.products?.product_name || "Unknown product",
     sku: v.products?.sku || "",
     c: v.products?.categories?.name || "—",
+    categoryId: v.products?.category_id || "",
     color: v.color || "—",
     size: v.size || "—",
     q: Number(v.quantity || 0),
@@ -289,7 +298,7 @@ function home(active = "dashboard") {
         <button class="tab ${active === "dashboard" ? "active" : ""}" onclick="showTab('dashboard')">Overview</button>
         <button class="tab ${active === "inventory" ? "active" : ""}" onclick="showTab('inventory')">Inventory</button>
         ${!admin ? `<button class="tab ${active === "sale" ? "active" : ""}" onclick="showTab('sale')">Record Sale</button>` : ""}
-        ${admin ? `<button class="tab ${active === "reports" ? "active" : ""}" onclick="showTab('reports')">Total Sales</button>` : ""}
+        ${admin ? `<button class="tab ${active === "reports" ? "active" : ""}" onclick="showTab('reports')">All Time Sales</button>` : ""}
       </nav>
 
       <main id="v" class="content"></main>
@@ -335,9 +344,13 @@ function pageWrap(cls, image, content) {
 function renderDashboard() {
   const totalStock = db.inventory.reduce((sum, i) => sum + i.q, 0);
   const totalValue = db.inventory.reduce((sum, i) => sum + i.q * i.price, 0);
-  const totalSales = db.sales.reduce((sum, s) => sum + s.amt, 0);
-  const mySales = db.sales.filter((s) => s.repId === me.id);
-  const myTotal = mySales.reduce((sum, s) => sum + s.amt, 0);
+  // Dashboard sales counters are intentionally day-based. Historical sales remain
+  // untouched in Supabase and are shown in the Admin "All Time Sales" report.
+  const todayDate = localToday();
+  const todaySales = db.sales.filter((s) => s.d === todayDate);
+  const totalSalesToday = todaySales.reduce((sum, s) => sum + s.amt, 0);
+  const mySalesToday = todaySales.filter((s) => s.repId === me.id);
+  const myTotalToday = mySalesToday.reduce((sum, s) => sum + s.amt, 0);
   const lowStock = db.inventory.filter((i) => i.q <= i.low);
 
   const recent = [...db.sales].sort((a,b) => `${b.d}${b.createdAt}`.localeCompare(`${a.d}${a.createdAt}`)).slice(0, 5);
@@ -364,9 +377,9 @@ function renderDashboard() {
         <small>Current stock value</small>
       </article>
       <article class="stat-card">
-        <span>${me.r === "admin" ? "Total sales" : "My sales"}</span>
-        <strong>${money(me.r === "admin" ? totalSales : myTotal)}</strong>
-        <small>${me.r === "admin" ? db.sales.length : mySales.length} recorded transactions</small>
+        <span>${me.r === "admin" ? "Total sales today" : "My sales"}</span>
+        <strong>${money(me.r === "admin" ? totalSalesToday : myTotalToday)}</strong>
+        <small>${me.r === "admin" ? todaySales.length : mySalesToday.length} transaction${(me.r === "admin" ? todaySales.length : mySalesToday.length) === 1 ? "" : "s"} today</small>
       </article>
       <article class="stat-card ${lowStock.length ? "warning" : ""}">
         <span>Low stock</span>
@@ -417,7 +430,7 @@ function renderInventory() {
         <h1>Inventory</h1>
         <p class="muted">See what you have, what it costs and what needs restocking.</p>
       </div>
-      ${me.r === "admin" ? `<button class="primary" onclick="addInv()">+ Add inventory</button>` : ""}
+      ${me.r === "admin" ? `<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="ghost" onclick="manageInv()">Manage inventory</button><button class="primary" onclick="addInv()">+ Add inventory</button></div>` : ""}
     </div>
 
     <div class="glass-card table-card">
@@ -450,6 +463,254 @@ window.filterInventory = () => {
   document.querySelectorAll("#inventoryTable tbody tr").forEach((row) => {
     row.style.display = row.textContent.toLowerCase().includes(term) ? "" : "none";
   });
+};
+
+window.manageInv = async () => {
+  if (me.r !== "admin") return showTab("inventory");
+
+  await loadData();
+  const categoriesResult = await supabaseClient.from("categories").select("id,name").order("name");
+  const categories = categoriesResult.error ? [] : (categoriesResult.data || []);
+
+  if (categoriesResult.error) console.error(categoriesResult.error);
+
+  const rows = db.inventory.map(i => `
+    <tr>
+      <td><strong>${esc(i.p)}</strong>${i.size !== "—" ? `<br><span class="subtle">Size: ${esc(i.size)}</span>` : ""}</td>
+      <td>${esc(i.c)}</td>
+      <td>${esc(i.color)}</td>
+      <td><span class="stock-pill ${i.q <= i.low ? "low" : ""}">${i.q}</span></td>
+      <td>${money(i.price)}</td>
+      <td>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <button class="text-btn" onclick="editInv('${i.id}')">Edit</button>
+          <button class="text-btn" onclick="adjustInv('${i.id}')">Adjust</button>
+          <button class="text-btn" onclick="removeInv('${i.id}')">Remove</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+
+  window._inventoryCategories = categories;
+
+  $("#v").innerHTML = pageWrap("inventory-page", "store-3.jpg", `
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Inventory</p>
+        <h1>Manage inventory</h1>
+        <p class="muted">Add, edit, adjust or remove inventory items.</p>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="ghost" onclick="showTab('inventory')">← Back</button>
+        <button class="primary" onclick="addInv()">+ Add inventory</button>
+      </div>
+    </div>
+
+    <div class="glass-card table-card">
+      <div class="table-tools">
+        <input id="manageInventorySearch" oninput="filterManageInventory()" placeholder="Search products...">
+        <span>${db.inventory.length} products</span>
+      </div>
+      <div class="table-wrap">
+        <table id="manageInventoryTable">
+          <thead><tr><th>Product</th><th>Category</th><th>Color</th><th>Stock</th><th>Price</th><th>Actions</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="6"><div class="empty">No inventory items found.</div></td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `);
+};
+
+window.filterManageInventory = () => {
+  const term = ($("#manageInventorySearch")?.value || "").toLowerCase();
+  document.querySelectorAll("#manageInventoryTable tbody tr").forEach((row) => {
+    row.style.display = row.textContent.toLowerCase().includes(term) ? "" : "none";
+  });
+};
+
+window.editInv = async (id) => {
+  if (me.r !== "admin") return;
+  const item = db.inventory.find(i => String(i.id) === String(id));
+  if (!item) return alert("Inventory item not found.");
+
+  const categories = window._inventoryCategories || [];
+  $("#v").innerHTML = pageWrap("inventory-page", "store-3.jpg", `
+    <div class="page-heading">
+      <div><p class="eyebrow">Inventory</p><h1>Edit inventory</h1><p class="muted">Update the product and inventory details.</p></div>
+      <button class="ghost" onclick="manageInv()">← Back</button>
+    </div>
+    <div class="glass-card form-card">
+      <form onsubmit="event.preventDefault(); saveEditInv('${item.id}')">
+        <div class="form-grid">
+          <label>Product name<input id="editProduct" required value="${esc(item.p)}"></label>
+          <label>Category
+            <select id="editCategory" required>
+              ${categories.map(c => `<option value="${esc(c.id)}" ${String(c.id) === String(item.categoryId) ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+            </select>
+          </label>
+          <label>Color<input id="editColor" required value="${esc(item.color === "—" ? "" : item.color)}"></label>
+          <label>Size<input id="editSize" value="${esc(item.size === "—" ? "" : item.size)}"></label>
+          <label>Selling price (₦)<input id="editPrice" required type="number" min="0" step="0.01" value="${item.price}"></label>
+          <label>Cost price (₦)<input id="editCost" required type="number" min="0" step="0.01" value="${item.cost}"></label>
+          <label>Low-stock threshold<input id="editLow" required type="number" min="0" step="1" value="${item.low}"></label>
+          <label>Current quantity<input id="editQty" required type="number" min="0" step="1" value="${item.q}"></label>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="primary" type="submit">Save changes</button>
+          <button class="ghost" type="button" onclick="manageInv()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  `);
+};
+
+window.saveEditInv = async (id) => {
+  if (me.r !== "admin") return alert("Only an administrator can edit inventory.");
+  const item = db.inventory.find(i => String(i.id) === String(id));
+  if (!item) return alert("Inventory item not found.");
+
+  const productName = $("#editProduct").value.trim();
+  const categoryId = $("#editCategory").value;
+  const color = $("#editColor").value.trim();
+  const size = $("#editSize").value.trim() || null;
+  const price = Number($("#editPrice").value);
+  const cost = Number($("#editCost").value);
+  const low = Number($("#editLow").value);
+  const quantity = Number($("#editQty").value);
+
+  if (!productName || !categoryId || !color) return alert("Complete all required product fields.");
+  if (![price, cost].every(Number.isFinite) || price < 0 || cost < 0) return alert("Enter valid prices.");
+  if (!Number.isInteger(low) || low < 0) return alert("Enter a valid low-stock threshold.");
+  if (!Number.isInteger(quantity) || quantity < 0) return alert("Enter a valid quantity.");
+
+  try {
+    const { error: productError } = await supabaseClient
+      .from("products")
+      .update({ product_name: productName, category_id: categoryId })
+      .eq("id", item.productId);
+    if (productError) throw productError;
+
+    const { error: variantError } = await supabaseClient
+      .from("inventory_variants")
+      .update({
+        color,
+        size,
+        quantity,
+        selling_price: price,
+        cost_price: cost,
+        low_stock_threshold: low,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", item.id);
+    if (variantError) throw variantError;
+
+    const delta = quantity - item.q;
+    if (delta !== 0) {
+      const { error: adjustmentError } = await supabaseClient
+        .from("inventory_adjustments")
+        .insert({
+          inventory_variant_id: item.id,
+          quantity_change: delta,
+          reason: "Inventory edited by admin",
+          performed_by: me.id
+        });
+      if (adjustmentError) console.error("Adjustment log error:", adjustmentError);
+    }
+
+    await loadData();
+    alert("Inventory updated successfully.");
+    manageInv();
+  } catch (err) {
+    console.error(err);
+    alert(getErrorMessage(err, "Could not update inventory."));
+  }
+};
+
+window.adjustInv = async (id) => {
+  if (me.r !== "admin") return;
+  const item = db.inventory.find(i => String(i.id) === String(id));
+  if (!item) return alert("Inventory item not found.");
+
+  $("#v").innerHTML = pageWrap("inventory-page", "store-3.jpg", `
+    <div class="page-heading">
+      <div><p class="eyebrow">Inventory</p><h1>Adjust stock</h1><p class="muted">Increase or decrease the current quantity. The adjustment is logged.</p></div>
+      <button class="ghost" onclick="manageInv()">← Back</button>
+    </div>
+    <div class="glass-card form-card">
+      <form onsubmit="event.preventDefault(); saveAdjustInv('${item.id}')">
+        <div class="sale-preview"><span>Current stock</span><strong>${item.q}</strong></div>
+        <div class="form-grid">
+          <label>Adjustment quantity<input id="adjustQty" required type="number" step="1" placeholder="e.g. 10 or -3"></label>
+          <label>Reason<input id="adjustReason" required placeholder="e.g. New stock received"></label>
+        </div>
+        <div class="sale-preview"><span>New stock</span><strong id="adjustNewQty">${item.q}</strong></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="primary" type="submit">Save adjustment</button>
+          <button class="ghost" type="button" onclick="manageInv()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  `);
+  $("#adjustQty")?.addEventListener("input", () => {
+    const delta = Number($("#adjustQty").value || 0);
+    $("#adjustNewQty").textContent = String(item.q + (Number.isFinite(delta) ? delta : 0));
+  });
+};
+
+window.saveAdjustInv = async (id) => {
+  if (me.r !== "admin") return alert("Only an administrator can adjust inventory.");
+  const delta = Number($("#adjustQty").value);
+  const reason = $("#adjustReason").value.trim();
+  if (!Number.isInteger(delta) || delta === 0) return alert("Enter a non-zero whole-number adjustment.");
+  if (!reason) return alert("Enter a reason for the adjustment.");
+
+  try {
+    const { error } = await supabaseClient.rpc("adjust_inventory_v2", {
+      p_inventory_variant_id: id,
+      p_quantity_change: delta,
+      p_reason: reason
+    });
+    if (error) throw error;
+    await loadData();
+    alert("Inventory adjustment saved successfully.");
+    manageInv();
+  } catch (err) {
+    console.error(err);
+    alert(getErrorMessage(err, "Could not adjust inventory."));
+  }
+};
+
+window.removeInv = async (id) => {
+  if (me.r !== "admin") return;
+  const item = db.inventory.find(i => String(i.id) === String(id));
+  if (!item) return alert("Inventory item not found.");
+  if (!confirm(`Remove "${item.p}" from inventory? This does not remove its historical sales.`)) return;
+
+  try {
+    const { error } = await supabaseClient
+      .from("inventory_variants")
+      .delete()
+      .eq("id", item.id);
+    if (error) throw error;
+
+    const { data: remaining, error: remainingError } = await supabaseClient
+      .from("inventory_variants")
+      .select("id")
+      .eq("product_id", item.productId);
+    if (remainingError) throw remainingError;
+
+    if (!(remaining || []).length) {
+      const { error: productError } = await supabaseClient.from("products").delete().eq("id", item.productId);
+      if (productError) console.warn("Product record could not be removed:", productError);
+    }
+
+    await loadData();
+    alert("Inventory item removed.");
+    manageInv();
+  } catch (err) {
+    console.error(err);
+    alert(getErrorMessage(err, "Could not remove this inventory item. If it has sales history, keep it and adjust its stock to 0 instead."));
+  }
 };
 
 window.addInv = async () => {
@@ -651,9 +912,10 @@ function renderReports() {
 
   const groups = {};
   db.sales.forEach((s) => {
-    groups[s.d] ??= { amt: 0, qty: 0 };
+    groups[s.d] ??= { amt: 0, qty: 0, count: 0 };
     groups[s.d].amt += Number(s.amt || 0);
     groups[s.d].qty += Number(s.qty || 0);
+    groups[s.d].count += 1;
   });
 
   const dates = Object.keys(groups).sort().reverse();
@@ -661,8 +923,8 @@ function renderReports() {
 
   $("#v").innerHTML = pageWrap("reports-page", "store-5.jpg", `
     <div class="page-heading">
-      <div><p class="eyebrow">Admin report</p><h1>Total sales</h1><p class="muted">Review sales by day and open a detailed transaction list.</p></div>
-      <div class="report-total"><span>All-time</span><strong>${money(grandTotal)}</strong></div>
+      <div><p class="eyebrow">Admin report</p><h1>All time sales</h1><p class="muted">View all transactions grouped by date. Click any date to open that day's sales report.</p></div>
+      <div class="report-total"><span>All-time total</span><strong>${money(grandTotal)}</strong></div>
     </div>
 
     <div class="report-grid">
@@ -670,7 +932,7 @@ function renderReports() {
         <button class="day-card" onclick="day('${esc(d)}')">
           <span>${esc(d)}</span>
           <strong>${money(groups[d].amt)}</strong>
-          <small>${groups[d].qty} item${groups[d].qty === 1 ? "" : "s"} sold</small>
+          <small>${groups[d].count} transaction${groups[d].count === 1 ? "" : "s"} · ${groups[d].qty} item${groups[d].qty === 1 ? "" : "s"} sold</small>
           <b>View →</b>
         </button>
       `).join("") : `<div class="glass-card empty">No sales yet.</div>`}
@@ -734,6 +996,26 @@ window.day = (d) => {
 function findSaleProduct(s) {
   return s.product || "Sale";
 }
+
+// Keep the daily dashboard counters current even if the page remains open across midnight.
+let dashboardDay = localToday();
+setInterval(async () => {
+  const newDay = localToday();
+  if (newDay === dashboardDay) return;
+  dashboardDay = newDay;
+
+  if (!me || !supabaseReady()) return;
+
+  try {
+    await loadData();
+    // Historical data is never cleared. Only the dashboard's "today" counters change.
+    if (document.querySelector(".dashboard-page")) {
+      renderDashboard();
+    }
+  } catch (err) {
+    console.error("Daily sales refresh failed:", err);
+  }
+}, 30000);
 
 /*
  * Supabase client bootstrap.
