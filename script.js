@@ -6,8 +6,8 @@
 const $ = (selector) => document.querySelector(selector);
 const app = $("#app");
 
-const SUPABASE_URL = "https://xhzvopylycblabbtwhvo.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_E-Ghl4rTkHdXA_H0GAsbbQ__K8OqGv-";
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_PUBLISHABLE_KEY = "YOUR_SUPABASE_ANON_KEY";
 
 let supabaseClient = null;
 let me = null;
@@ -718,9 +718,27 @@ window.addInv = async () => {
 
   let categories = [];
   try {
+    const requiredCategories = ["Bags", "Slides", "Shoes", "Wears"];
     const { data, error } = await supabaseClient.from("categories").select("id,name").order("name");
     if (error) throw error;
     categories = data || [];
+
+    // Ensure the standard store categories are available to Admin when adding inventory.
+    // Only missing categories are inserted; existing categories are left untouched.
+    if (me.r === "admin") {
+      const existingNames = new Set(categories.map(c => String(c.name || "").trim().toLowerCase()));
+      for (const name of requiredCategories) {
+        if (existingNames.has(name.toLowerCase())) continue;
+        const { data: created, error: createError } = await supabaseClient
+          .from("categories")
+          .insert({ name })
+          .select("id,name")
+          .single();
+        if (!createError && created) categories.push(created);
+        else if (createError) console.warn(`Could not create category ${name}:`, createError);
+      }
+      categories.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    }
   } catch (err) {
     console.error(err);
   }
