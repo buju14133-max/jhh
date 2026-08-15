@@ -6,8 +6,8 @@
 const $ = (selector) => document.querySelector(selector);
 const app = $("#app");
 
-const SUPABASE_URL = "https://xhzvopylycblabbtwhvo.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_E-Ghl4rTkHdXA_H0GAsbbQ__K8OqGv-";
+const SUPABASE_URL = "https://exiuegfihnekrizbwdkr.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_YhpuBvMrRJtA_DDDT-xHsQ_0jce1uJT";
 
 let supabaseClient = null;
 let me = null;
@@ -343,7 +343,6 @@ function pageWrap(cls, image, content) {
 
 function renderDashboard() {
   const totalStock = db.inventory.reduce((sum, i) => sum + i.q, 0);
-  const totalValue = db.inventory.reduce((sum, i) => sum + i.q * i.price, 0);
   // Dashboard sales counters are intentionally day-based. Historical sales remain
   // untouched in Supabase and are shown in the Admin "All Time Sales" report.
   const todayDate = localToday();
@@ -370,11 +369,6 @@ function renderDashboard() {
         <span>Items in stock</span>
         <strong>${totalStock}</strong>
         <small>${db.inventory.length} products</small>
-      </article>
-      <article class="stat-card">
-        <span>Inventory value</span>
-        <strong>${money(totalValue)}</strong>
-        <small>Current stock value</small>
       </article>
       <article class="stat-card">
         <span>${me.r === "admin" ? "Total sales today" : "My sales"}</span>
@@ -428,7 +422,7 @@ function renderInventory() {
       <div>
         <p class="eyebrow">Stock management</p>
         <h1>Inventory</h1>
-        <p class="muted">See what you have, what it costs and what needs restocking.</p>
+        <p class="muted">See what you have and what needs restocking.</p>
       </div>
       ${me.r === "admin" ? `<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="ghost" onclick="manageInv()">Manage inventory</button><button class="primary" onclick="addInv()">+ Add inventory</button></div>` : ""}
     </div>
@@ -440,15 +434,13 @@ function renderInventory() {
       </div>
       <div class="table-wrap">
         <table id="inventoryTable">
-          <thead><tr><th>Product</th><th>Category</th><th>Color</th><th>Stock</th><th>Price</th></tr></thead>
+          <thead><tr><th>Product</th><th>Color</th><th>Stock</th></tr></thead>
           <tbody>
             ${db.inventory.map(i => `
               <tr>
                 <td><strong>${esc(i.p)}</strong>${i.size !== "—" ? `<br><span class="subtle">Size: ${esc(i.size)}</span>` : ""}</td>
-                <td>${esc(i.c)}</td>
-                <td>${esc(i.color)}</td>
+                         <td>${esc(i.color)}</td>
                 <td><span class="stock-pill ${i.q <= i.low ? "low" : ""}">${i.q}</span></td>
-                <td><strong>${money(i.price)}</strong></td>
               </tr>
             `).join("")}
           </tbody>
@@ -469,18 +461,12 @@ window.manageInv = async () => {
   if (me.r !== "admin") return showTab("inventory");
 
   await loadData();
-  const categoriesResult = await supabaseClient.from("categories").select("id,name").order("name");
-  const categories = categoriesResult.error ? [] : (categoriesResult.data || []);
-
-  if (categoriesResult.error) console.error(categoriesResult.error);
-
   const rows = db.inventory.map(i => `
     <tr>
       <td><strong>${esc(i.p)}</strong>${i.size !== "—" ? `<br><span class="subtle">Size: ${esc(i.size)}</span>` : ""}</td>
       <td>${esc(i.c)}</td>
       <td>${esc(i.color)}</td>
       <td><span class="stock-pill ${i.q <= i.low ? "low" : ""}">${i.q}</span></td>
-      <td>${money(i.price)}</td>
       <td>
         <div style="display:flex;gap:7px;flex-wrap:wrap">
           <button class="text-btn" onclick="editInv('${i.id}')">Edit</button>
@@ -490,8 +476,6 @@ window.manageInv = async () => {
       </td>
     </tr>
   `).join("");
-
-  window._inventoryCategories = categories;
 
   $("#v").innerHTML = pageWrap("inventory-page", "store-3.jpg", `
     <div class="page-heading">
@@ -513,8 +497,8 @@ window.manageInv = async () => {
       </div>
       <div class="table-wrap">
         <table id="manageInventoryTable">
-          <thead><tr><th>Product</th><th>Category</th><th>Color</th><th>Stock</th><th>Price</th><th>Actions</th></tr></thead>
-          <tbody>${rows || `<tr><td colspan="6"><div class="empty">No inventory items found.</div></td></tr>`}</tbody>
+          <thead><tr><th>Product</th><th>Color</th><th>Stock</th><th>Actions</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="4"><div class="empty">No inventory items found.</div></td></tr>`}</tbody>
         </table>
       </div>
     </div>
@@ -533,7 +517,6 @@ window.editInv = async (id) => {
   const item = db.inventory.find(i => String(i.id) === String(id));
   if (!item) return alert("Inventory item not found.");
 
-  const categories = window._inventoryCategories || [];
   $("#v").innerHTML = pageWrap("inventory-page", "store-3.jpg", `
     <div class="page-heading">
       <div><p class="eyebrow">Inventory</p><h1>Edit inventory</h1><p class="muted">Update the product and inventory details.</p></div>
@@ -543,15 +526,8 @@ window.editInv = async (id) => {
       <form onsubmit="event.preventDefault(); saveEditInv('${item.id}')">
         <div class="form-grid">
           <label>Product name<input id="editProduct" required value="${esc(item.p)}"></label>
-          <label>Category
-            <select id="editCategory" required>
-              ${categories.map(c => `<option value="${esc(c.id)}" ${String(c.id) === String(item.categoryId) ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
-            </select>
-          </label>
           <label>Color<input id="editColor" required value="${esc(item.color === "—" ? "" : item.color)}"></label>
           <label>Size<input id="editSize" value="${esc(item.size === "—" ? "" : item.size)}"></label>
-          <label>Selling price (₦)<input id="editPrice" required type="number" min="0" step="0.01" value="${item.price}"></label>
-          <label>Cost price (₦)<input id="editCost" required type="number" min="0" step="0.01" value="${item.cost}"></label>
           <label>Low-stock threshold<input id="editLow" required type="number" min="0" step="1" value="${item.low}"></label>
           <label>Current quantity<input id="editQty" required type="number" min="0" step="1" value="${item.q}"></label>
         </div>
@@ -570,23 +546,19 @@ window.saveEditInv = async (id) => {
   if (!item) return alert("Inventory item not found.");
 
   const productName = $("#editProduct").value.trim();
-  const categoryId = $("#editCategory").value;
   const color = $("#editColor").value.trim();
   const size = $("#editSize").value.trim() || null;
-  const price = Number($("#editPrice").value);
-  const cost = Number($("#editCost").value);
   const low = Number($("#editLow").value);
   const quantity = Number($("#editQty").value);
 
-  if (!productName || !categoryId || !color) return alert("Complete all required product fields.");
-  if (![price, cost].every(Number.isFinite) || price < 0 || cost < 0) return alert("Enter valid prices.");
+  if (!productName || !color) return alert("Complete all required product fields.");
   if (!Number.isInteger(low) || low < 0) return alert("Enter a valid low-stock threshold.");
   if (!Number.isInteger(quantity) || quantity < 0) return alert("Enter a valid quantity.");
 
   try {
     const { error: productError } = await supabaseClient
       .from("products")
-      .update({ product_name: productName, category_id: categoryId })
+      .update({ product_name: productName })
       .eq("id", item.productId);
     if (productError) throw productError;
 
@@ -596,8 +568,8 @@ window.saveEditInv = async (id) => {
         color,
         size,
         quantity,
-        selling_price: price,
-        cost_price: cost,
+        selling_price: 0,
+        cost_price: 0,
         low_stock_threshold: low,
         updated_at: new Date().toISOString()
       })
@@ -716,33 +688,6 @@ window.removeInv = async (id) => {
 window.addInv = async () => {
   if (me.r !== "admin") return;
 
-  let categories = [];
-  try {
-    const requiredCategories = ["Bags", "Slides", "Shoes", "Wears"];
-    const { data, error } = await supabaseClient.from("categories").select("id,name").order("name");
-    if (error) throw error;
-    categories = data || [];
-
-    // Ensure the standard store categories are available to Admin when adding inventory.
-    // Only missing categories are inserted; existing categories are left untouched.
-    if (me.r === "admin") {
-      const existingNames = new Set(categories.map(c => String(c.name || "").trim().toLowerCase()));
-      for (const name of requiredCategories) {
-        if (existingNames.has(name.toLowerCase())) continue;
-        const { data: created, error: createError } = await supabaseClient
-          .from("categories")
-          .insert({ name })
-          .select("id,name")
-          .single();
-        if (!createError && created) categories.push(created);
-        else if (createError) console.warn(`Could not create category ${name}:`, createError);
-      }
-      categories.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    }
-  } catch (err) {
-    console.error(err);
-  }
-
   $("#v").innerHTML = pageWrap("inventory-page", "store-3.jpg", `
     <div class="page-heading">
       <div><p class="eyebrow">Inventory</p><h1>Add product</h1><p class="muted">Add a new item to your store stock.</p></div>
@@ -752,15 +697,8 @@ window.addInv = async () => {
       <form onsubmit="event.preventDefault(); saveInv()">
         <div class="form-grid">
           <label>Product name<input id="newProduct" required placeholder="e.g. Canvas Bag"></label>
-          <label>Category
-            <select id="newCategory" required>
-              <option value="">Select category</option>
-              ${categories.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}
-            </select>
-          </label>
           <label>Color<input id="newColor" required placeholder="e.g. Brown"></label>
           <label>Quantity<input id="newQty" required type="number" min="0" placeholder="0"></label>
-          <label>Price (₦)<input id="newPrice" required type="number" min="0" placeholder="0"></label>
         </div>
         <button class="primary" type="submit">Save product</button>
       </form>
@@ -772,14 +710,11 @@ window.saveInv = async () => {
   if (me.r !== "admin") return alert("Only an administrator can add inventory.");
 
   const productName = $("#newProduct").value.trim();
-  const categoryId = $("#newCategory").value;
   const color = $("#newColor").value.trim();
   const quantity = Number($("#newQty").value);
-  const price = Number($("#newPrice").value);
 
-  if (!productName || !categoryId || !color) return alert("Complete all product fields.");
+  if (!productName || !color) return alert("Complete all product fields.");
   if (!Number.isInteger(quantity) || quantity < 0) return alert("Enter a valid quantity.");
-  if (!Number.isFinite(price) || price < 0) return alert("Enter a valid price.");
 
   const skuBase = productName.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30);
   const sku = `${skuBase || "PRODUCT"}-${Date.now().toString().slice(-6)}`;
@@ -789,8 +724,7 @@ window.saveInv = async () => {
       .from("products")
       .insert({
         product_name: productName,
-        sku,
-        category_id: categoryId
+        sku
       })
       .select("id, product_name, sku")
       .single();
@@ -804,7 +738,7 @@ window.saveInv = async () => {
         color,
         size: null,
         quantity,
-        selling_price: price,
+        selling_price: 0,
         cost_price: 0,
         low_stock_threshold: 5
       })
@@ -846,7 +780,7 @@ async function renderSale() {
 
   const available = db.inventory.filter(i => i.q > 0);
   const options = available.map(i =>
-    `<option value="${esc(i.id)}">${esc(i.p)} — ${esc(i.color)} · ${i.q} left · ${money(i.price)}</option>`
+    `<option value="${esc(i.id)}">${esc(i.p)} — ${esc(i.color)} · ${i.q} left</option>`
   ).join("");
 
   $("#v").innerHTML = pageWrap("sale-page", "store-4.jpg", `
@@ -859,6 +793,7 @@ async function renderSale() {
         <label>Product<select id="item" required>${options}</select></label>
         <div class="form-grid">
           <label>Quantity<input id="qty" type="number" min="1" value="1" required></label>
+          <label>Selling price per item (₦)<input id="salePrice" type="number" min="0" step="0.01" placeholder="Enter price" required></label>
           <label>Date<input id="date" type="date" value="${today()}" required></label>
           <label>Payment method
             <select id="paymentMethod" required>
@@ -877,15 +812,17 @@ async function renderSale() {
 
   $("#item")?.addEventListener("change", updateSalePreview);
   $("#qty")?.addEventListener("input", updateSalePreview);
+  $("#salePrice")?.addEventListener("input", updateSalePreview);
   updateSalePreview();
 }
 
 function updateSalePreview() {
   const item = db.inventory.find(x => String(x.id) === String($("#item")?.value));
   const qty = Number($("#qty")?.value || 1);
+  const unitPrice = Number($("#salePrice")?.value || 0);
   const preview = $("#salePreview");
   if (!item || !preview) return;
-  preview.innerHTML = `<span>${esc(item.p)} × ${qty}</span><strong>${money(item.price * qty)}</strong>`;
+  preview.innerHTML = `<span>${esc(item.p)} × ${qty} @ ${money(unitPrice)}</span><strong>${money(unitPrice * qty)}</strong>`;
 }
 
 window.saveSale = async () => {
@@ -893,11 +830,13 @@ window.saveSale = async () => {
 
   const item = db.inventory.find(x => String(x.id) === String($("#item").value));
   const qty = Number($("#qty").value);
+  const unitPrice = Number($("#salePrice").value);
   const paymentMethodId = $("#paymentMethod").value;
 
   if (!item) return alert("Please select a product.");
   if (!Number.isInteger(qty) || qty < 1) return alert("Enter a valid quantity.");
   if (qty > item.q) return alert("Not enough stock.");
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) return alert("Enter a valid selling price.");
   if (!paymentMethodId) return alert("Select a payment method.");
 
   try {
@@ -907,7 +846,7 @@ window.saveSale = async () => {
       p_inventory_variant_id: item.id,
       p_product_id: item.productId,
       p_quantity: qty,
-      p_unit_price: item.price,
+      p_unit_price: unitPrice,
       p_payment_method_id: paymentMethodId,
       p_customer_name: $("#customer").value.trim(),
       p_customer_phone: null,
@@ -993,15 +932,13 @@ window.day = (d) => {
       <div class="section-head" style="padding:18px 20px 0"><div><p class="eyebrow">Current stock</p><h2>Remaining products</h2></div></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Product</th><th>Category</th><th>Color</th><th>Remaining stock</th><th>Price</th></tr></thead>
+          <thead><tr><th>Product</th><th>Color</th><th>Remaining stock</th></tr></thead>
           <tbody>
             ${db.inventory.map(i => `
               <tr>
                 <td><strong>${esc(i.p)}</strong></td>
-                <td>${esc(i.c)}</td>
-                <td>${esc(i.color)}</td>
+                         <td>${esc(i.color)}</td>
                 <td><span class="stock-pill ${i.q <= i.low ? "low" : ""}">${i.q}</span></td>
-                <td><strong>${money(i.price)}</strong></td>
               </tr>
             `).join("")}
           </tbody>
