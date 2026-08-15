@@ -6,8 +6,8 @@
 const $ = (selector) => document.querySelector(selector);
 const app = $("#app");
 
-const SUPABASE_URL = "https://xhzvopylycblabbtwhvo.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_E-Ghl4rTkHdXA_H0GAsbbQ__K8OqGv-";
+const SUPABASE_URL = "https://giuxhyiedfevzlryfntg.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_eU4cwIFcAJVAoNkYOfscZg_FYOgUO6Y";
 
 let supabaseClient = null;
 let me = null;
